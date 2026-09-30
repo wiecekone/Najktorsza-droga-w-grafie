@@ -1,96 +1,88 @@
-#Projekt Shire
+# Projekt Shire
 
-1. Modele danych
+System modelowania sieci optymalizacji transportu surowców i produktów (jęczmień/piwo) z wykorzystaniem algorytmów grafowych oraz geometrii obliczeniowej.
 
-    1. Punkt
-        ◦ Przechowuje współrzędne (x, y)
+---
 
-    2. Region
-        ◦ Reprezentuje wypukły wielokąt oraz wartość ilości jęczmienia uzyskiwana z pola w tym regionie
+## 1. Modele Danych
 
-    3. Pole
-        ◦ Ma lokalizację (Punkt Lokalizacja) oraz pole z ilością jęczmienia (double), wyliczane na podstawie tego, w którym regionie się znajduje.
+* **Punkt**
+  * Przechowuje współrzędne dwuwymiarowe $(x, y)$.
+* **Region**
+  * Reprezentuje wypukły wielokąt oraz określa jednostkową ilość jęczmienia uzyskiwaną z pola leżącego w tym obszarze.
+* **Pole**
+  * Posiada określoną lokalizację (`Punkt`) oraz wyliczaną ilość jęczmienia (`double`), ustalaną na podstawie przynależności do danego regionu.
+* **Browar**
+  * Posiada lokalizację oraz maksymalną przepustowość (pojemność przetwórczą) jęczmienia.
+* **Karczma**
+  * Posiada lokalizację; brak ograniczeń pojemnościowych (przyjmuje dowolną ilość piwa).
+* **Droga**
+  * Połączenie krawędziowe pomiędzy dwoma punktami z określonymi właściwościami:
+    * Pojemność dla transportu jęczmienia
+    * Pojemność dla transportu piwa
+    * Koszt naprawy (wykorzystywany przy minimalizacji całkowitych kosztów transportu)
 
-    4. Browar
-        ◦ Lokalizacja i maksymalna ilość jęczmienia, którą może przerobić.
+---
 
-    5. Karczma
-        ◦ Lokalizacja, brak ograniczenia pojemności tzn. przyjmuje dowolną ilość piwa
+## 2. Budowa Sieci Przepływowej
 
-    6. Droga
-        ◦ Połączenie z punktu do punktu z właściwościami:
-            i. Pojemność Jęczmienia
-            ii. Pojemność Piwa
-            iii. Koszt naprawy  - Używany, gdy minimalizujemy całkowite koszty transportu
+Transport zamodelowany jest jako **skierowany graf przepływowy (sieć)** o strukturze wielowarstwowej:
 
-2. Budowanie sieci przepływowej
+```text
+[Źródło] ──> [Pola] ──> [Skrzyżowania (Jęczmień)] ──> [Browary (Przetwórstwo)] ──> [Skrzyżowania (Piwo)] ──> [Karczmy] ──> [Ujście]
+```
 
-Cała logika transportu zamodelowana jest jako skierowany graf przepływowy (sieć), w której:
-    1. Źródło wysyła na początek tyle jednostek, ile wynosi łączna ilość jęczmienia dla wszystkich pól.
-    2. Węzły reprezentujące pola – z każdego pola wypływa do sieci tyle jednostek, ile jest jęczmienia.
-    3. Warstwa skrzyżowań w części „jęczmiennej” – pola łączą się z najbliższymi węzłami-skrzyżowaniami, a skrzyżowania między sobą są połączone drogami, gdzie każda droga ma ograniczoną pojemność na jęczmienie i koszt naprawy tej drogi.
-    4. Węzły „browarów” w warstwie jęczmiennej – do nich trafia od skrzyżowań ograniczona ilość (według pojemności browaru).
-    5. Warstwa „browarów-piwo” -> warstwa skrzyżowań w części „piwnej” – browar konwertuje przychodzące jednostki jęczmienia na jednostki piwa (pojemność konwersji = pojemność wejściowa) i przekazuje je dalej do skrzyżowań piwnych.
-    6. Warstwa skrzyżowań w części „piwnej” – drogi między nimi mają swoją pojemność dla piwa oraz koszty naprawy (analogicznie jak w warstwie jęczmiennej).
-    7. Węzły „karczm” – ze skrzyżowań piwnych idą krawędzie o pojemności nieskończoność (karczmy mogą przyjąć dowolną ilość piwa) do ujścia gdzie kończy się przepływ.
+### Logika przepływu:
+1. **Źródło:** Wysyła sumaryczną ilość jęczmienia wygenerowaną ze wszystkich pól.
+2. **Węzły pól:** Wprowadzają do sieci ilość surowca odpowiadającą plonom z danego pola.
+3. **Warstwa skrzyżowań (Jęczmień):** Pola łączą się z najbliższymi węzłami-skrzyżowaniami. Skrzyżowania połączone są drogami o ograniczonej pojemności i określonym koszcie naprawy.
+4. **Węzły Browarów (wejście):** Odbierają jęczmień ze skrzyżowań w granicach swojej maksymalnej pojemności.
+5. **Konwersja w Browarach:** Browar konwertuje przychodzące jednostki jęczmienia na piwo w stosunku 1:1 i przekazuje je do warstwy skrzyżowań piwnych.
+6. **Warstwa skrzyżowań (Piwo):** Transport piwa między skrzyżowaniami z uwzględnieniem dedykowanych pojemności i kosztów dróg.
+7. **Karczmy i Ujście:** Karczmy połączone są ze skrzyżowaniami piwnymi krawędziami o nieskończonej pojemności, a z karczm przepływ trafia bezpośrednio do Ujścia.
 
+---
 
+## 3. Algorytmy
 
+### 3.1. Ford–Fulkerson (z wykorzystaniem DFS)
+* **Cel:** Wyznaczenie maksymalnego przepływu od źródła do ujścia (bez uwzględniania kosztów).
+* **Zasada działania:**
+  1. Inicjalizacja sieci zerowym przepływem.
+  2. Wyszukiwanie dowolnej ścieżki powiększającej w grafie rezydualnym za pomocą algorytmu **DFS**.
+  3. Aktualizacja przepływu wzdłuż znalezionej ścieżki oraz w krawędziach odwrotnych o wartość wąskiego gardła (*bottleneck*).
+  4. Powtarzanie kroków 2–3 do momentu braku ścieżek powiększających.
+* **Złożoność:** $O(E \cdot f_{max})$, gdzie $E$ to liczba krawędzi, a $f_{max}$ to maksymalny przepływ.
 
+### 3.2. Bellman-Ford / SPFA (Min-Cost Max-Flow)
+* **Cel:** Wyznaczenie maksymalnego przepływu przy minimalizacji sumarycznego kosztu transportu (z opcją ograniczenia budżetowego).
+* **Zasada działania:**
+  1. Inicjalizacja przepływu wartością 0.
+  2. Wyszukiwanie **najtańszej** ścieżki powiększającej w grafie rezydualnym przy użyciu wariantu algorytmu Bellmana-Forda (SPFA z kolejką).
+  3. Przepychanie maksymalnego możliwego przepływu wzdłuż najtańszej ścieżki i aktualizacja kosztów.
+  4. Iteracja do wyczerpania ścieżek lub osiągnięcia docelowego wolumenu przepływu / limitu budżetu.
+* **Złożoność:** $O(V \cdot E)$.
 
-3. Algorytmy
-1. Ford–Fulkerson z DFS
-    • Celem jest wyznaczenie maksymalnego przepływu od źródła do ujścia bez kosztów.
-    • Zasada działania:
-        1. Startujemy z całkowicie pustym przepływem.
-        2. Szukamy w grafie rezydualnym dowolnej ścieżki powiększającej używając DFS.
-        3. Znalezioną ścieżką „przepychamy” możliwie najwięcej razy, aktualizujemy przepływ w każdej krawędzi oraz w odwróconych krawędziach.
-        4. Powtarzamy kroki 2–3, aż nie da się znaleźć więcej ścieżek z dodatnią rezydualną pojemnością.
-    • Złożoność: W najgorszym przypadku O(E * przepływ), ale na praktycznych rozmiarach działa zwykle wystarczająco szybko.
-2. Bellman-Ford
-    • Cel: Znaleźć maksymalny przepływ lub dokładnie określoną jego wartość, jednocześnie minimalizując całkowite koszty z dodatkiem do ograniczenia kosztów poprzez budżet. 
-    • Zasada działania:
-        1. Początkowo (przepływ=0) nie ma żadnych kosztów.
-        2. W każdej iteracji znajdujemy w grafie rezydualnym najtańszą ścieżkę od źródła do ujścia, przy uwzględnieniu rezydualnych pojemności i kosztów krawędzi (algorytm SPFA / Bellman-Ford w wersji z kolejką).
-        3. Wyznaczamy maksymalny możliwy do przepchnięcia przepływ na tej ścieżce, przesyłamy go i aktualizujemy koszty.
-        4. Powtarzamy, aż nie będzie ścieżki lub osiągniemy wymaganą ilość przepływu.
-    • Złożoność: O(V * E).
-3. Reguła parzystości
-    • Cel: Sprawdzenie, czy punkt leży wewnątrz wielokąta wypukłego.
-    • Zasada działania:
-        ◦ Dla danego punktu i listy wierzchołków wypukłego wielokąta wybieramy półprostą wychodzącą z punktu oraz liczymy liczbę przecięć z krawędziami wielokąta.
-    • Złożoność: Działa w czasie O(n), gdzie n = liczba wierzchołków wielokąta.
-4. Knuth–Morris–Pratt (KMP)
-    • Cel: Wyszukiwanie wszystkich wystąpień wzorca w danym tekście w czasie liniowym O(n+m).
-    • Zasada działania:
-        1. Najpierw budujemy tablicę prefiksów (tzw. pi[i]) dla wzorca.
-        2. Przechodzimy po tekście, w razie niezgodności cofamy się zgodnie z tablicą pi, co pozwala uniknąć ponownego porównywania znaków.
-        3. Działa w czasie O(n+m).
-Użycie w projekcie: Pozwala szybko wyszukać w dowolnym tekście interesujące słowa (np. „piwo”, „jęczmień”) nawet przy ignorowaniu wielkości liter.
+### 3.3. Reguła Parzystości (Ray Casting Algorithm)
+* **Cel:** Weryfikacja, czy dane Pole leży wewnątrz określonego Regionu (wielokąta wypukłego).
+* **Zasada działania:**
+  * Wyznaczenie półprostej wychodzącej z testowanego punktu i zliczenie liczby jej przecięć z krawędziami wielokąta. Nieparzysta liczba przecięć oznacza, że punkt znajduje się wewnątrz obszaru.
+* **Złożoność:** $O(n)$, gdzie $n$ to liczba wierzchołków wielokąta.
 
+### 3.4. Knuth–Morris–Pratt (KMP)
+* **Cel:** Liniowe wyszukiwanie wzorców tekstowych w opisach i indeksach (np. słów kluczowych takich jak „piwo”, „jęczmień”).
+* **Zasada działania:**
+  1. Konstrukcja tablicy prefiksowej ($\pi$) dla wyszukiwanego wzorca.
+  2. Przeszukiwanie tekstu z wykorzystaniem tablicy $\pi$ do omijania niepotrzebnych porównań po wystąpieniu niezgodności.
+* **Złożoność:** $O(n + m)$, gdzie $n$ to długość tekstu, a $m$ długość wzorca.
 
-4. Podsumowanie
-    1. Modele:
-        ◦ Punkt, Region, Pole, Browar, Karczma, Droga
-        ◦ Obliczyć, w którym regionie znajduje się każde pole → przypisać plon.
-        ◦ Zgromadzić informacje o pojemnościach i kosztach dróg, browarów, karczm.
+---
 
+## 4. Podsumowanie Architektury
 
-
-
-
-    2. Budowa sieci:
-        ◦ Sieć jest wielowarstwowa:
-            ▪ Źródło  -> Pola
-            ▪ Pola  -> skrzyżowania (jęczmień)  -> browary (jęczmień)  -> browary (piwo)  -> karczmy  -> ujście
-        ◦ Każda krawędź ma:
-            ▪ Pojemność (jęczmienia albo piwa)
-            ▪ Koszt naprawy drogi
-
-    3. Algorytmy:
-        ◦ Ford–Fulkerson (DFS)  - maksymalny przepływ bez kosztów; szybki do implementacji, szukamy dowolnej ścieżki powiększającej.
-        ◦ Belmann-Ford - maksymalny przepływ przy minimalnym sumarycznym koszcie; w każdej iteracji wybieramy najtańszą ścieżkę w residualnym grafie.
-        ◦ Reguła parzystości  - przypisywanie pola do regionu (wypukły wielokąt)
-        ◦ KMP  - szybkie wyszukiwanie wzorców w tekście, przydatne do prostego indeksowania i wyszukiwania słów kluczowych w dowolnych opisach.
-
-
+| Obszar | Kluczowe Elementy | Opis / Rola |
+| :--- | :--- | :--- |
+| **Modelowanie** | `Punkt`, `Region`, `Pole`, `Browar`, `Karczma`, `Droga` | Przypisanie pól do regionów i wyliczenie plonów, wyznaczenie parametrów sieci. |
+| **Topologia** | Wielowarstwowy Graf Skierowany | Zapewnienie rozdzielności logicznej transportu surowca i produktu gotowego. |
+| **Optymalizacja** | Ford–Fulkerson, Bellman-Ford | Wyznaczanie przepustowości maksymalnej oraz wariantów najtańszych. |
+| **Analiza i Pomocnicze**| Reguła Parzystości, KMP | Klasyfikacja geometryczna punktów oraz szybkie indeksowanie tekstu. |
